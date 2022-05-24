@@ -1,14 +1,12 @@
 #include <cstdio>
-#include <iostream>
 #include <fstream>
-#include <string>
 
 using namespace std;
 
 #define ae 0.271
 #define ai 0.999
 #define ka 0.0000019
-#define ro 0.000000009
+#define ro 0.000000001
 #define beta 0.007
 #define mu 0.0009
 #define gamma 0
@@ -17,69 +15,58 @@ using namespace std;
 #define I0 0
 #define D0 0
 
-double func_sensitive(double sensitive, double E, double infected, double recovered, double population) {
+double deltaSensitive(double sensitive, double E, double infected, double recovered, double population) {
 	return -1*(ai * sensitive * infected / population  + ae * sensitive * E / population) + gamma * recovered;
 }
 
-double func_infected(double E, double infected) {
+double deltaInfected(double E, double infected) {
 	return ka * E - beta * infected - mu * infected;
 }
 
-double func_E(double sensitive, double E, double infected, double population) {
+double deltaE(double sensitive, double E, double infected, double population) {
 	return (ai * sensitive * infected / population + ae * sensitive * E / population) - (ka + ro) * E;
 }
 
-double func_recovered(double E, double infected, double recovered) {
+double deltaRecovered(double E, double infected, double recovered) {
 	return beta * infected + ro * E - gamma * recovered;
 }
 
-double func_dead(double infected) {
+double deltaDead(double infected) {
 	return mu * infected;
 }
 
 void euler_method(double start, double end, double step) {
 	FILE *res = fopen("result.txt", "w"); // запись в файл 'result.txt'
 	int n = (end - start) / step + 1; // количество промежутков
-	
-    double *sensitive = new double[n]; // Восприимчивые (незараженные) индивидуумы c 3 лет;
-    double *E = new double[n]; // Зараженные или находящиеся в инкубационном периоде индивидуумы;
-    double *infected = new double[n]; // Инфицированные с симптомами;
-    double *recovered = new double[n]; // Вылеченные;
-    double *dead = new double[n]; // Умершие;
-    double *population = new double[n]; // Вся популяция;
-	
-	sensitive[0] = 2798170 - E0 - R0 ;
-	E[0] = E0;
-	infected[0] = I0;
-	recovered[0] = R0;
-	dead[0] = D0;
-	population[0] = sensitive[0] + E0 + I0 + R0 + D0; // вся популяция
+	double sensitive[2] = { 2798170 - E0 - R0 }; // восприимчивые (незараженные) индивидуумы c 3 лет
+	double E[2] = { E0 }; // инфицированные без симптомов или находящиеся в инкубационном периоде индивидуумы
+	double infected[2] = { I0 }; // инфицированные с симптомами
+	double recovered[2] = { R0 }; // вылеченные
+	double dead[2] = { D0 }; // умершие
+	double population[2] = { sensitive[0] + E0 + I0 + R0 + D0 }; // вся популяция
 	fprintf(res, "%.0lf %.2lf %.2lf %.2lf %.2lf %.2lf %.2lf\n", start, population[0], sensitive[0], E[0], infected[0], recovered[0], dead[0]); // запись в файл начальных значений
-	
+
 	// считаем значения и записываем их в ячейки массивов
 	for (int i = 1; i < n; i++) {
+		double t_prev = start + (i-1) * step;
 		double t_next = start + i * step;
-		sensitive[i] = sensitive[i - 1] + step * func_sensitive(sensitive[i - 1], E[i - 1], infected[i - 1], recovered[i - 1], population[i - 1]);
-		E[i] = E[i - 1] + step * func_E(sensitive[i - 1], E[i - 1], infected[i - 1], population[i - 1]);
-		infected[i] = infected[i - 1] + step * func_infected(E[i - 1], infected[i - 1]);
-		recovered[i] = recovered[i - 1] + step * func_recovered(E[i - 1], infected[i - 1], recovered[i - 1]);
-		dead[i] = dead[i - 1] + step * func_dead(infected[i - 1]);
-		population[i] = sensitive[i] + E[i] + infected[i] + recovered[i] + dead[i];
+		int prev = (i-1) & 1;
+		int next = i & 1;
+		sensitive[next] = sensitive[prev] + step * deltaSensitive(sensitive[prev], E[prev], infected[prev], recovered[prev], population[prev]);
+		E[next] = E[prev] + step * deltaE(sensitive[prev], E[prev], infected[prev], population[prev]);
+		infected[next] = infected[prev] + step * deltaInfected(E[prev], infected[prev]);
+		recovered[next] = recovered[prev] + step * deltaRecovered(E[prev], infected[prev], recovered[prev]);
+		dead[next] = dead[prev] + step * deltaDead(infected[prev]);
+		population[next] = sensitive[next] + E[next] + infected[next] + recovered[next] + dead[next];
 
-		sensitive[i] = sensitive[i - 1] + step / 2 * (func_sensitive(sensitive[i - 1], E[i - 1], infected[i - 1], recovered[i - 1], population[i - 1]) + func_sensitive(sensitive[i], E[i], infected[i], recovered[i], population[i]));
-		E[i] = E[i - 1] + step / 2 * (func_E(sensitive[i - 1], E[i - 1], infected[i - 1], population[i - 1]) + func_E(sensitive[i], E[i], infected[i], population[i]));
-		infected[i] = infected[i - 1] + step / 2 * (func_infected(E[i - 1], infected[i - 1]) + func_infected(E[i], infected[i]));
-		recovered[i] = recovered[i - 1] + step / 2 * (func_recovered(E[i - 1], infected[i - 1], recovered[i - 1]) + func_recovered(E[i], infected[i], recovered[i]));
-		dead[i] = dead[i - 1] + step / 2 * (func_dead(infected[i - 1]) + func_dead(infected[i]));
-		population[i] = sensitive[i] + E[i] + infected[i] + recovered[i] + dead[i];
+		sensitive[next] = sensitive[prev] + step / 2 * (deltaSensitive(sensitive[prev], E[prev], infected[prev], recovered[prev], population[prev]) + deltaSensitive(sensitive[next], E[next], infected[next], recovered[next], population[next]));
+		E[next] = E[prev] + step / 2 * (deltaE(sensitive[prev], E[prev], infected[prev], population[prev]) + deltaE(sensitive[next], E[next], infected[next], population[next]));
+		infected[next] = infected[prev] + step / 2 * (deltaInfected(E[prev], infected[prev]) + deltaInfected(E[next], infected[next]));
+		recovered[next] = recovered[prev] + step / 2 * (deltaRecovered(E[prev], infected[prev], recovered[prev]) + deltaRecovered(E[next], infected[next], recovered[next]));
+		dead[next] = dead[prev] + step / 2 * (deltaDead(infected[prev]) + deltaDead(infected[next]));
+		population[next] = sensitive[next] + E[next] + infected[next] + recovered[next] + dead[next];
 
-		fprintf(res, "%.0lf %.2lf %.2lf %.2lf %.2lf %.2lf %.2lf\n", t_next, population[i], sensitive[i], E[i], infected[i], recovered[i], dead[i]); // запись в файл вычисленных значений
-		delete[] sensitive;
-		delete[] E;
-		delete[] infected;
-		delete[] recovered;
-		delete[] dead;
-		delete[] population;
+		fprintf(res, "%.0lf %.2lf %.2lf %.2lf %.2lf %.2lf %.2lf\n", t_next, population[next], sensitive[next], E[next], infected[next], recovered[next], dead[next]); // запись в файл вычисленных значений
 	}
 	fclose(res); // закрываем файл 'result.txt'
 }
